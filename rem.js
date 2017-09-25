@@ -79,4 +79,4 @@
 
 	window.remBuffer = remBuffer;
 
-})(window,640);
+})(window,750);
