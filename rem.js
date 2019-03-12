@@ -1,4 +1,4 @@
-// rem 布局
+// rem
 ;(function(win,dd){
 	var doc = win.document;
 	var docEl = doc.documentElement;
