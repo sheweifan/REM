@@ -1,82 +1,198 @@
-// rem 布局
-;(function(win,dd){
-	var doc = win.document;
-	var docEl = doc.documentElement;
+;(function(win, lib) {
+  var doc = win.document
+  var docEl = doc.documentElement
+  var metaEl = doc.querySelector('meta[name="viewport"]')
+  var flexibleEl = doc.querySelector('meta[name="flexible"]')
+  var dpr = 0
+  var scale = 0
+  var tid
+  var flexible = lib.flexible || (lib.flexible = {})
 
-	var meta = document.querySelector('meta[name="viewport"]');
-	var dpr = void 'fuck'
-	var scale = void 'you'
-	var remBuffer = {};
-	var defaultRem = 100;
-	var isIPhone = win.navigator.appVersion.match(/iphone/gi);
-	var devicePixelRatio = win.devicePixelRatio;
-	if (isIPhone) {
-		if (devicePixelRatio >= 3 && (!dpr || dpr >= 3)) {                
-			dpr = 3;
-		} else if (devicePixelRatio >= 2 && (!dpr || dpr >= 2)){
-			dpr = 2;
-		} else {
-			dpr = 1;
-		}
-	} else {
-		dpr = 1;
-	}
-	scale = 1 / dpr;
+  if (metaEl) {
+    console.warn('将根据已有的meta标签来设置缩放比例')
+    var match = metaEl.getAttribute('content').match(/initial-scale=([\d]+)/)
+    if (match) {
+      scale = parseFloat(match[1])
+      dpr = parseInt(1 / scale)
+    }
+  } else if (flexibleEl) {
+    var content = flexibleEl.getAttribute('content')
+    if (content) {
+      var initialDpr = content.match(/initial-dpr=([\d]+)/)
+      var maximumDpr = content.match(/maximum-dpr=([\d]+)/)
+      if (initialDpr) {
+        dpr = parseFloat(initialDpr[1])
+        scale = parseFloat((1 / dpr).toFixed(2))
+      }
+      if (maximumDpr) {
+        dpr = parseFloat(maximumDpr[1])
+        scale = parseFloat((1 / dpr).toFixed(2))
+      }
+    }
+  }
 
-	docEl.setAttribute('data-dpr',dpr);
-	docEl.setAttribute('data-device',isIPhone?'ios':'android');
-	doc.addEventListener('DOMContentLoaded', function(e) {
-		doc.body.style.fontSize = 16 * dpr + 'px';
-		doc.body.className+=' rem_ready';
-	}, false);
+  if (!dpr && !scale) {
+    // var isAndroid = win.navigator.appVersion.match(/android/gi)
+    var isIPhone = win.navigator.appVersion.match(/iphone/gi)
+    var devicePixelRatio = win.devicePixelRatio
+    if (isIPhone) {
+      // iOS下，对于2和3的屏，用2倍的方案，其余的用1倍方案
+      if (devicePixelRatio >= 3 && (!dpr || dpr >= 3)) {
+        dpr = 3
+      } else if (devicePixelRatio >= 2 && (!dpr || dpr >= 2)) {
+        dpr = 2
+      } else {
+        dpr = 1
+      }
+    } else {
+      // 其他设备下，仍旧使用1倍的方案
+      dpr = 1
+    }
+    scale = 1 / dpr
+  }
 
+  docEl.setAttribute('data-dpr', dpr)
+  if (!metaEl) {
+    metaEl = doc.createElement('meta')
+    metaEl.setAttribute('name', 'viewport')
+    metaEl.setAttribute(
+      'content',
+      'initial-scale=' +
+        scale +
+        ', maximum-scale=' +
+        scale +
+        ', minimum-scale=' +
+        scale +
+        ', user-scalable=no'
+    )
+    if (docEl.firstElementChild) {
+      docEl.firstElementChild.appendChild(metaEl)
+    } else {
+      var wrap = doc.createElement('div')
+      wrap.appendChild(metaEl)
+      doc.write(wrap.innerHTML)
+    }
+  }
 
-	if(meta){
-		meta.setAttribute('content','initial-scale='+scale+',maximum-scale='+scale+',minimum-scale='+scale+',user-scalable=0')
-	}else{
-		doc.write('<meta name="viewport" content="initial-scale='+scale+',maximum-scale='+scale+',minimum-scale='+scale+',user-scalable=0">');
-	}
-	var setFontSize = function(){
-		var docW = docEl.getBoundingClientRect().width;
-			// console.log(docW/dpr)
-			if (docW / dpr > 420) {
-				docW = 350 * dpr;
-			}
-			// var _fs = Math.ceil( (docW/dpr)*defaultRem/(dd/dpr) )
-		var _fs = (docW/dpr)*defaultRem/(dd/dpr)
-		docEl.style.fontSize = _fs +'px';
-			// docEl.style.width=docW+'px';
+  function isPC() {
+    var userAgentInfo = navigator.userAgent
+    var Agents = [
+      'Android',
+      'iPhone',
+      'SymbianOS',
+      'Windows Phone',
+      'iPad',
+      'iPod'
+    ]
+    var flag = true
+    for (var v = 0; v < Agents.length; v++) {
+      if (userAgentInfo.indexOf(Agents[v]) > 0) {
+        flag = false
+        break
+      }
+    }
+    return flag
+  }
 
-		remBuffer.rem = _fs;
-	};
-	setFontSize();
+  function refreshRem() {
+    var width = docEl.getBoundingClientRect().width
+    var maxWidth = 768
+    if (isPC()) {
+      maxWidth = 500
+    }
+    if (width / dpr > maxWidth) {
+      width = maxWidth * dpr
+      docEl.style.width = `${width}px;margin: 0 auto;`
+    }
+    var rem = width / 10
+    docEl.style.fontSize = rem + 'px'
+    flexible.rem = win.rem = rem
 
-	window.addEventListener('orientationchange', function (e) {
-		setTimeout(function(){
-			setFontSize()
-		},300);
-	});
+    // fix 用户改大系统/浏览器文字导致rem计算错误，布局错乱-----开始-----
+    var u = navigator.userAgent
+    var isAndroid = u.indexOf('Android') > -1 || u.indexOf('Adr') > -1
+    // 只有安卓用户反馈，缩小范围降低风险
+    if (isAndroid) {
+      // 全屏幕宽度10rem
+      var remFull = 10
+      var eDivWidth = 0
+      var eDiv = document.createElement('div')
+      eDiv.style.width = remFull + 'rem'
+      eDiv.style.height = '1px'
+      eDiv.style.position = 'fixed'
+      eDiv.style.boxSizing = 'border-box'
+      document.body.appendChild(eDiv)
+      var startTS = +new Date()
+      var timer = setInterval(() => {
+        // 创建一个10rem宽度的div，这个div的宽度应该与屏幕宽度一致。不一致就是 字体被调大了
+        eDivWidth = eDiv.clientWidth
+        var clientWidth = docEl.clientWidth
+        if (+new Date() - startTS >= 8 * 1000) {
+          clearInterval(timer)
+          document.body.removeChild(eDiv)
+          console.log(`rem 重新计算 任务超时`, rem)
+        } else if (clientWidth === eDivWidth) {
+          clearInterval(timer)
+          document.body.removeChild(eDiv)
+          console.log(`rem 没问题了`, rem)
+        } else {
+          console.log(`rem 有问题，重新设置，错误的rem是`, rem)
+          rem = rem * (clientWidth / eDivWidth)
+          docEl.style.fontSize = rem + 'px'
+          flexible.rem = win.rem = rem
+        }
+      }, 100)
+    }
+    // fix 用户改大系统/浏览器文字导致rem计算错误，布局错乱-----结束-----
+  }
 
-	remBuffer.setFontSize = setFontSize;
-	remBuffer.dpr = dpr;
-	remBuffer.isiphone = isIPhone;
+  win.addEventListener(
+    'resize',
+    function() {
+      clearTimeout(tid)
+      tid = setTimeout(refreshRem, 300)
+    },
+    false
+  )
+  win.addEventListener(
+    'pageshow',
+    function(e) {
+      if (e.persisted) {
+        clearTimeout(tid)
+        tid = setTimeout(refreshRem, 300)
+      }
+    },
+    false
+  )
 
-	remBuffer.rem2px = function(d){
-		var val = (parseFloat(d) * this.rem).toFixed(0);
-		if(typeof d === 'string' && d.match(/rem$/)){
-			val += 'px';
-		}
-			return val;
-	}
+  if (doc.readyState === 'complete') {
+    doc.body.style.fontSize = 12 * dpr + 'px'
+  } else {
+    doc.addEventListener(
+      'DOMContentLoaded',
+      function() {
+        doc.body.style.fontSize = 12 * dpr + 'px'
+      },
+      false
+    )
+  }
 
-	remBuffer.px2rem = function(d){
-		var val = (parseFloat(d) / this.rem).toFixed(2);
-		if(typeof d === 'string' && d.match(/px$/)){
-			val += 'rem';
-		}
-			return val;
-	}
+  refreshRem()
 
-	window.remBuffer = remBuffer;
-
-})(window,750);
+  flexible.dpr = win.dpr = dpr
+  flexible.refreshRem = refreshRem
+  flexible.rem2px = function(d) {
+    var val = parseFloat(d) * this.rem
+    if (typeof d === 'string' && d.match(/rem$/)) {
+      val += 'px'
+    }
+    return val
+  }
+  flexible.px2rem = function(d) {
+    var val = parseFloat(d) / this.rem
+    if (typeof d === 'string' && d.match(/px$/)) {
+      val += 'rem'
+    }
+    return val
+  }
+})(window, window['lib'] || (window['lib'] = {}))
